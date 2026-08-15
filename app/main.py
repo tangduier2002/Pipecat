@@ -13,8 +13,12 @@ from fastapi import FastAPI
 from neo4j import AsyncGraphDatabase
 
 from app.config import settings
+from app.memory import patient_summary
 
 _HEALTH_TIMEOUT_S = 3.0
+
+# 会话状态: 进程内存缓存, 启动时从 Patient KG 恢复 (T4)
+_session_cache: dict = {}
 
 
 async def _neo4j_connected(driver) -> bool:
@@ -34,6 +38,11 @@ async def lifespan(app: FastAPI):
         settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)
     )
     app.state.driver = driver
+    # 会话状态恢复: 默认患者概要加载到进程内存 (失败不阻塞启动)
+    try:
+        _session_cache["default"] = await patient_summary("default", driver)
+    except Exception:
+        _session_cache["default"] = {}
     yield
     await driver.close()
 
@@ -49,3 +58,18 @@ async def health() -> dict:
     if await _neo4j_connected(driver):
         return {"status": "ok", "neo4j": "connected"}
     return {"status": "degraded", "neo4j": "disconnected"}
+
+
+@app.get("/memory/{patient_id}")
+async def memory_snapshot(patient_id: str) -> dict:
+    """记忆快照 (T4): 优先进程缓存, 未命中时查询 Patient KG 并缓存。"""
+    driver = getattr(app.state, "driver", None)
+    if driver is None:
+        return {"patient_id": patient_id, "error": "neo4j uninitialized"}
+    cache_key = f"patient:{patient_id}"
+    if cache_key not in _session_cache:
+        try:
+            _session_cache[cache_key] = await patient_summary(patient_id, driver)
+        except Exception as exc:
+            return {"patient_id": patient_id, "error": str(exc)}
+    return _session_cache[cache_key]
