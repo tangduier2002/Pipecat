@@ -82,12 +82,14 @@ async def _send_email_with_retry(subject: str, body: str, recipients: list[str])
             message["To"] = ", ".join(recipients)
             message["Subject"] = subject
             message.set_content(body)
+            # 465 为隐式 TLS (SMTPS), 587 为 STARTTLS
             await aiosmtplib.send(
                 message,
                 hostname=settings.smtp_host,
                 port=settings.smtp_port,
                 username=settings.smtp_user or None,
                 password=settings.smtp_password or None,
+                use_tls=bool(settings.smtp_port == 465),
                 start_tls=bool(settings.smtp_port == 587),
             )
             logger.info("危机邮件已发送: %s", recipients)

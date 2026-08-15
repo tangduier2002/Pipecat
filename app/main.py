@@ -7,6 +7,7 @@ memory) 复用同一连接实例。T1 提供 /health 健康检查。
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -15,10 +16,21 @@ from neo4j import AsyncGraphDatabase
 from app.config import settings
 from app.memory import patient_summary
 
+logger = logging.getLogger(__name__)
+
 _HEALTH_TIMEOUT_S = 3.0
 
 # 会话状态: 进程内存缓存, 启动时从 Patient KG 恢复 (T4)
 _session_cache: dict = {}
+
+
+def _warn_smtp_misconfig() -> None:
+    """启动时校验 SMTP 配置; 缺失仅告警, 不阻塞启动。"""
+    if not settings.smtp_host:
+        logger.warning("SMTP_HOST 未配置, 危机邮件通知将跳过 (guard 降级语义)")
+        return
+    if not (settings.smtp_user and settings.smtp_password):
+        logger.warning("SMTP_USER/SMTP_PASSWORD 未配置, 真实 SMTP 会拒绝匿名发送")
 
 
 async def _neo4j_connected(driver) -> bool:
@@ -38,6 +50,7 @@ async def lifespan(app: FastAPI):
         settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)
     )
     app.state.driver = driver
+    _warn_smtp_misconfig()
     # 会话状态恢复: 默认患者概要加载到进程内存 (失败不阻塞启动)
     try:
         _session_cache["default"] = await patient_summary("default", driver)
