@@ -1,7 +1,7 @@
 # guard — 输出合规审查节点
 
-**运行时**：LangGraph 必经节点（`guard_agent.py`），所有 Agent 输出先过本节点再进 TTS
-**实现技术**：NeMo Guardrails（Colang DSL 规则）
+**运行时**：审查纯函数（`guard_check.py`），所有 Agent 输出先过本函数再进 TTS
+**实现技术**：确定性规则（关键词 + 阈值），不依赖外部框架（见 ADR-0002）
 
 > 产品层别名（Agent C 参谋监察）已废弃，本模块即原 Agent C 职责的代码落地。
 
@@ -10,9 +10,9 @@
 1. **输出审查**：motivation / education 的输出必须经过审查，拦截医疗合规违规内容
 2. **药物兜底**：任何含药物/用药表达（无论来自用户输入还是 Agent 输出）→ NVC 拒答话术
 3. **紧急升级**：确认 monitor 触发的 emergency（高血压危象 / 心理危机），执行预案
-4. **SOS 流程**：触发通知家属 / 呼叫 120 / 推送心理热线
+4. **SOS 流程**：写 CrisisEvent 到 Patient KG + 异步邮件通知子女/社区医生 + 心理热线推送
 
-## 审查规则（NeMo Guardrails / Colang）
+## 审查规则（guard_check 纯函数）
 
 ```text
 规则 1：禁止恐吓性语言
@@ -30,6 +30,8 @@
 规则 5：心理危机
   → 检测到「不想活」「活着没意思」→ 心理危机话术 + 心理热线
 ```
+
+签名：`guard_check(text: str, threshold: Threshold) -> GuardAction`，其中 `GuardAction ∈ {PASS, REWRITE, REJECT, EMERGENCY}`。规则 1/3 为 REWRITE（可重写），规则 2 为 REJECT（转拒答话术），规则 4/5 为 EMERGENCY（触发危机通知）。确定性关键词 + 阈值判断，无需 LLM 或规则引擎。
 
 ## NVC 拒答话术模板（药物 / 超范围类）
 
@@ -73,15 +75,27 @@
 
 ```
 Agent 输出
-  → NeMo Guardrails 规则匹配
-    ├─ 通过 → TTS
-    ├─ 违规（可重写）→ 重写后 TTS
-    ├─ 违规（药物/红线）→ NVC 拒答话术 → TTS
-    └─ emergency 确认 → 预案执行（通知家属/120/心理热线）+ TTS 安抚
+  → guard_check 规则匹配
+    ├─ PASS → TTS
+    ├─ REWRITE（违规可重写）→ 重写后 TTS
+    ├─ REJECT（药物/红线）→ NVC 拒答话术 → TTS
+    └─ EMERGENCY（确认）→ 危机预案 → TTS 安抚
 ```
+
+## 危机预案（人工介入，MRP 必须保留）
+
+emergency 确认后（血压 ≥ 180/120 或心理危机），后台执行，不中断对话：
+
+1. **写 CrisisEvent 节点**到 Patient KG：时间、类型（hypertensive_crisis / psychological_crisis）、血压读数、触发文本
+2. **异步邮件通知**（FastAPI BackgroundTasks + `aiosmtplib`，收件人在 `.env` 配置）：
+   - 子女邮箱：时间、血压读数、症状、对话摘要、系统已建议就医/安抚
+   - 社区医生邮箱：同上 + 近期 VitalSign 趋势摘要（从 Patient KG 取）
+3. **对话侧照常**：TTS 安抚 + 就医建议；通知在后台进行
+
+> 邮箱配置：`.env` 中 `CAREGIVER_EMAIL` / `COMMUNITY_DOCTOR_EMAIL` / `SMTP_*`。将来若需要「等人工确认后才继续对话」，届时再引入状态机（见 ADR-0002 演化路径）。
 
 ## 验收标准
 
 - motivation 输出含药物表述 → 被拦截并替换为拒答话术
 - 输入「降压药能和西柚一起吃吗」→ 拒答（用户侧兜底，双保险）
-- emergency 由 monitor 触发后，guard 确认才执行通知流程
+- emergency 由 monitor 触发后，guard 确认才写 CrisisEvent + 发通知邮件

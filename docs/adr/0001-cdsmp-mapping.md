@@ -27,7 +27,7 @@
 | 层 | 处理 |
 |----|------|
 | motivation 对话 | 无吃药提醒、停药劝慰、依从性激励 |
-| Patient KG | 无 `Medication` 实体、无用药抽取（Zep 本体不含药物） |
+| Patient KG | 无 `Medication` 实体、无用药抽取（memory 模块 schema 不含药物） |
 | education | 无 `DRUG_QUERY` / `INTERACTION_QUERY` 意图 |
 | Domain KG | **不含 Drug 节点**及食物-药物相互作用关系 |
 | guard 规则 | 药物表达兜底拦截 + NVC 拒答话术（见 `docs/agents/guard.md`） |
@@ -43,10 +43,11 @@
 ## 其他被废弃的产品层命名
 
 - 「Agent A / B / C」与「健康教练 / 记忆局长 / 参谋监察」别名全部废弃
-- 唯一命名：`triage_agent` / `monitor_agent` / `education_agent` / `motivation_agent` / `guard_agent` / `profile_service`（见 `CONTEXT.md` 术语表）
+- 唯一命名：`triage` / `monitor` / `education` / `motivation` / `guard_check` / `memory`（见 `CONTEXT.md` 术语表）
 
 ## 关联文档
 
 - `CONTEXT.md`（架构约束）
 - `docs/agents/motivation.md`（CDSMP 行为落地）
 - `docs/agents/guard.md`（拒答与兜底规则）
+- `docs/adr/0002-stack-simplification.md`（技术栈精简，guard/memory 实现方式见该决策）

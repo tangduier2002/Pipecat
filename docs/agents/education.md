@@ -1,9 +1,9 @@
 # education — Domain KG 问答
 
-**运行时**：LangGraph 节点（`education_agent.py`）
+**运行时**：路由函数（`education.py`）
 **数据源**：Domain KG（Neo4j 静态医学子图，`Domain:*` 标签命名空间）
 
-> 本文档吸收原 `语音多智能体.md` 的知识图谱设计，按 MRP 决策裁剪全部药物相关内容（见 `docs/adr/0001-cdsmp-mapping.md`）。
+> 本文档吸收原 `语音多智能体.md` 的知识图谱设计，按 MRP 决策裁剪全部药物相关内容（见 `docs/adr/0001-cdsmp-mapping.md`）。LLM 兜底分支按 ADR-0002 改为 NVC 拒答。
 
 ## 职责
 
@@ -101,21 +101,18 @@ Education 只处理 `knowledge_query` 下的细粒度子意图（由 triage 粗�
 | `EXERCISE_QUERY` | 高血压适合什么运动？ | 推荐/禁忌运动 |
 | `SYMPTOM_QUERY` | 高血压会头晕吗？ | 典型症状 |
 
-### Education Agent 主逻辑
+### Education 主逻辑
 
 ```python
-# agents/education_agent.py（LangGraph 节点）
-async def education_node(state: GraphState) -> GraphState:
-    entities = state["entities"]           # 来自 triage
-    sub_intent = entities.get("sub_intent")
-    handler = INTENT_HANDLERS[sub_intent] # FOOD/EXERCISE/SYMPTOM → Cypher
+# education.py（路由函数）
+async def education_route(user_text: str, entities: dict) -> str:
+    sub_intent = entities.get("sub_intent")      # FOOD/EXERCISE/SYMPTOM → Cypher
+    handler = INTENT_HANDLERS[sub_intent]
     result = await kg.query(handler.cypher, handler.params(entities))
     if not result:
-        state["reply"] = await fallback_llm(entities)  # 图谱无结果时 LLM 兜底（带免责声明）
-        return state
+        return build_nvc_reject(user_text)  # 图谱无结果 → NVC 拒答（模板三，见 guard.md），无 LLM 兜底
     context = build_context(result, entities)
-    state["reply"] = await generate_answer(context, entities)
-    return state
+    return await generate_answer(context, entities)
 ```
 
 答案生成要求（沿用 v1）：
@@ -123,6 +120,8 @@ async def education_node(state: GraphState) -> GraphState:
 1. 答案必须基于图谱检索结果，不编造
 2. 语气友善，鼓励患者
 3. 结尾医疗免责声明：「本回答仅供参考，具体请咨询医生」
+
+> **无 LLM 兜底分支**（ADR-0002）：图谱无匹配时直接走 NVC 拒答模板三（「我的知识够不到专业的边界，说错了反而耽误您，问医生或药师最稳当」），避免双生成路径与免责声明一致性维护成本；与合规红线方向一致。
 
 ## 数据导入
 
@@ -139,5 +138,5 @@ python scripts/import_kg.py
 ## 验收标准
 
 - 输入「高血压适合什么运动？」→ 返回基于图谱的自然语言回答 + 免责声明
-- 图谱无匹配时走 LLM 兜底（同样带免责声明）
+- 图谱无匹配 → NVC 拒答（模板三），无 LLM 兜底生成
 - 药物类输入永不进入本节点（triage 已拦截）

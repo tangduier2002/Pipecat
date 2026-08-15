@@ -1,6 +1,6 @@
 # triage — 意图分类与路由
 
-**运行时**：LangGraph 入口节点（`triage_agent.py`）
+**运行时**：入口路由函数（`triage.py`），无编排框架（见 ADR-0002）
 
 ## 职责
 
@@ -25,14 +25,12 @@
 ## 路由逻辑（骨架）
 
 ```python
-# agents/triage_agent.py（LangGraph 节点，非 Pipecat FrameProcessor）
-async def triage_node(state: GraphState) -> GraphState:
-    intent_data = await classify_intent(state["user_text"])
-    state["intent"] = intent_data["intent"]
-    state["entities"] = intent_data.get("entities", {})
+# triage.py（入口路由函数，非 Pipecat FrameProcessor）
+async def triage_route(user_text: str) -> Route:
+    intent_data = await classify_intent(user_text)
     if intent_data["intent"] == "drug_query":
-        state["reject"] = build_nvc_reject(state["user_text"])  # 拒答，不进任何 Agent
-    return state
+        return Route(reject=build_nvc_reject(user_text))  # 拒答，不进任何 Agent
+    return Route(target=intent_data["intent"], entities=intent_data.get("entities", {}))
 ```
 
 ## 切换细则 TODO

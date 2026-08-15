@@ -1,6 +1,6 @@
 # motivation — CDSMP 健康教练对话
 
-**运行时**：LangGraph 节点 + Pipecat 语音子图（`motivation_agent.py`）
+**运行时**：路由函数 + Pipecat 语音对话（`motivation.py`）
 
 ## 职责
 
@@ -38,17 +38,17 @@
 | 自我效能 | 进步可视化、能力肯定、成长故事记录（掌握经验/替代经验/社会说服） |
 | 医患伙伴关系（弱化） | 仅「建议咨询医生」，不讨论治疗方案 |
 
-## Pipecat 语音子图接口
+## Pipecat 语音对话接口
 
-Motivation 使用 Pipecat 做低延迟流式语音对话，作为 LangGraph 的一个语音子图：
+Motivation 使用 Pipecat 做低延迟流式语音对话（triage 路由进入后启动，多轮对话，结束后返回路由层）：
 
 ```
-LangGraph(motivation 节点)
-  → Pipecat 子图：STT →（对话轮次）→ TTS
-  → 回合结束后返回 LangGraph State
+路由(motivation)
+  → Pipecat 对话循环：STT →（对话轮次）→ TTS
+  → 每轮输出过 guard_check 审查；对话结束后回到路由层
 ```
 
-其余 Agent 不进入 Pipecat Pipeline，在 LangGraph 状态机内运行。
+其余 Agent 不进入 Pipecat Pipeline，在请求内运行。单轮回复型意图（education / monitor 确认）直接返回文本走 TTS。
 
 ## 对话原则（承自大文档）
 
