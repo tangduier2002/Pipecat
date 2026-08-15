@@ -29,7 +29,7 @@ DRUG_KEYWORDS = (
 )
 
 # 症状类紧急关键词 (规则 4) 与心理危机关键词 (规则 5)
-EMERGENCY_SYMPTOM_KEYWORDS = ("胸痛", "视力模糊", "看不清", "喘不上气")
+EMERGENCY_SYMPTOM_KEYWORDS = ("胸痛", "胸口", "视力模糊", "看不清", "喘不上气", "气短")
 CRISIS_KEYWORDS = ("不想活", "活着没意思", "不想活了", "活不下去", "想自杀")
 
 EMOTION_KEYWORDS = ("焦虑", "难过", "害怕", "孤独", "压力大", "烦躁", "抑郁", "失眠", "担心", "紧张")
