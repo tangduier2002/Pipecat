@@ -33,7 +33,8 @@ class FakeSession:
     async def run(self, cypher: str, params: dict | None = None, **kwargs):
         if self._raise:
             raise ConnectionError("neo4j unreachable")
-        params = params or {}
+        params = dict(params or {})
+        params.update(kwargs)  # 命名参数 (如 patient_id/props) 并入记录
         self._calls.append((cypher, params))
         if "RETURN count(n)" in cypher:
             return FakeResult(self._counts.get("nodes", 54))
