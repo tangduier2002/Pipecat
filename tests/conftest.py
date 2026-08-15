@@ -4,11 +4,24 @@ from __future__ import annotations
 
 
 class FakeResult:
-    def __init__(self, value):
+    """模拟 neo4j AsyncResult: 可 .single() 与 async 迭代 (async for)。"""
+
+    def __init__(self, value, records: list | None = None):
         self._value = value
+        self._records = records if records is not None else []
 
     async def single(self):
         return {"c": self._value}
+
+    def __aiter__(self):
+        self._iter = iter(self._records)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration
 
 
 class FakeSession:
@@ -17,9 +30,10 @@ class FakeSession:
         self._counts = counts or {}
         self._raise = raise_on_run
 
-    async def run(self, cypher: str, **params):
+    async def run(self, cypher: str, params: dict | None = None, **kwargs):
         if self._raise:
             raise ConnectionError("neo4j unreachable")
+        params = params or {}
         self._calls.append((cypher, params))
         if "RETURN count(n)" in cypher:
             return FakeResult(self._counts.get("nodes", 54))
