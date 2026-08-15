@@ -185,7 +185,8 @@ async def test_write_creates_patient_and_relation():
     nodes, _ = items_to_nodes(validate(_bp_record(155, 95)))
     await write(nodes, "张大爷", driver)
     cyphers = [c for c, _ in driver.calls]
-    assert any("MATCH (p:Patient {name: $patient_id})" in c for c in cyphers)
+    # 患者主节点 MERGE 自举 (首次写入自动创建, 幂等)
+    assert any("MERGE (p:Patient {name: $patient_id})" in c for c in cyphers)
     assert any("MERGE (n:Patient:`VitalSign`" in c for c in cyphers)
     assert any("`测量_AT`" in c for c in cyphers)
 
@@ -195,6 +196,15 @@ async def test_write_empty_no_query():
     await write([], "张大爷", driver)
     assert driver.calls == []
 
+
+def test_write_cypher_self_bootstraps_patient_node():
+    """回归: 患者主节点必须 MERGE 自举, 否则首次写入在真实库上静默失败。"""
+    from app.memory import _write_cypher
+
+    node = Node(label="VitalSign", props={"name": "血压"}, relation="测量_AT", merge_key="VitalSign|血压|2026-08-16")
+    cypher = _write_cypher(node)
+    assert "MERGE (p:Patient {name: $patient_id})" in cypher
+    assert "MATCH (p:Patient" not in cypher
 
 async def test_write_never_medication_label():
     driver = FakeDriver()

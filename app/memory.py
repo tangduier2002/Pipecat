@@ -245,10 +245,11 @@ async def write(nodes: list[Node], patient_id: str, driver) -> None:
 def _write_cypher(node: Node) -> str:
     """按节点类型选择 MERGE (可聚合) 或 CREATE (追加) 写入语句。
 
+    患者主节点用 MERGE 自举 (首次写入自动创建, 幂等)。
     相邻字符串字面量拼接后统一 .format(), 故 Cypher 字面花括号须双写转义,
     仅 {label} / {relation} 为格式化占位。
     """
-    match_stmt = "MATCH (p:Patient {{name: $patient_id}}) "
+    match_stmt = "MERGE (p:Patient {{name: $patient_id}}) "
     if node.merge_key:
         return (
             match_stmt

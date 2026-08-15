@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.memory import Node
 from app.monitor import (
     build_confirmation,
     detect_crisis,
@@ -18,36 +17,11 @@ from app.monitor import (
 from tests.conftest import FakeDriver
 
 
-class FakeLLM:
-    def __init__(self, records: list | None = None):
-        self._records = records or []
-
-    @property
-    def available(self) -> bool:
-        return True
-
-    async def chat_json(self, system: str, user: str) -> dict | None:
-        return {"records": self._records}
-
-
-def _now_iso():
-    return (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-
-
-def _bp_llm(systolic: int, diastolic: int):
-    return FakeLLM(
-        [
-            {"type": "vitalsign", "name": "血压", "value": systolic, "diastolic": diastolic, "unit": "mmHg", "timestamp": _now_iso()}
-        ]
-    )
-
-
 async def test_monitor_new_record_asks_confirmation_not_written():
     driver = FakeDriver()
     result = await monitor_route(
         "今天早上量血压 155/95",
         {"systolic": 155, "diastolic": 95},
-        FakeLLM(),
         driver,
     )
     assert result.confirmation is True
@@ -61,7 +35,6 @@ async def test_monitor_confirmation_writes_and_replies():
     result = await monitor_route(
         "对",
         {"systolic": 155, "diastolic": 95},
-        _bp_llm(155, 95),
         driver,
         pending={"systolic": 155, "diastolic": 95},
     )
@@ -73,12 +46,26 @@ async def test_monitor_confirmation_writes_and_replies():
     assert "Medication" not in cyphers
 
 
+async def test_monitor_confirmation_writes_without_llm():
+    """回归: 确认写入确定性构造记录, 不依赖 LLM (真实图谱验收发现)。"""
+    driver = FakeDriver()
+    result = await monitor_route(
+        "对",
+        {"systolic": 155, "diastolic": 95},
+        driver,
+        pending={"systolic": 155, "diastolic": 95},
+    )
+    assert result.written is True
+    # 写入参数含结构化血压值
+    props = [p for _, p in driver.calls if "props" in p]
+    assert props and any(p["props"].get("value") == 155.0 for p in props)
+
+
 async def test_monitor_denial_does_not_write():
     driver = FakeDriver()
     result = await monitor_route(
         "不对，我说错了",
         {},
-        FakeLLM(),
         driver,
         pending={"systolic": 155, "diastolic": 95},
     )
@@ -92,7 +79,6 @@ async def test_monitor_systolic_185_triggers_emergency():
     result = await monitor_route(
         "对",
         {"systolic": 185, "diastolic": 95},
-        _bp_llm(185, 95),
         driver,
         pending={"systolic": 185, "diastolic": 95},
     )
@@ -107,7 +93,6 @@ async def test_monitor_crisis_keyword_triggers_psychological():
     result = await monitor_route(
         "对",
         {"systolic": 140, "diastolic": 90},
-        FakeLLM(),
         driver,
         pending={"systolic": 140, "diastolic": 90},
     )

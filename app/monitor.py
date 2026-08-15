@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
-from app.memory import memory_pipeline
+from app.memory import PatientRecord, RecordItem, items_to_nodes, validate, write
 from app.triage import CRISIS_KEYWORDS, EMERGENCY_SYMPTOM_KEYWORDS
 
 # 异常阈值 (docs/agents/monitor.md)
@@ -102,7 +103,6 @@ def is_denial_reply(user_text: str) -> bool:
 async def monitor_route(
     user_text: str,
     entities: dict,
-    llm,
     driver,
     patient_id: str = "default",
     pending: dict | None = None,
@@ -113,13 +113,14 @@ async def monitor_route(
 
     pending: 未确认的待写实体 (确认环节状态, 由调用方传入/接收)。
     education_route / motivation_route: T2/T7 路由函数, 缺省占位实现。
+    确认写入为确定性构造 (结构化实体 → 记录), 不依赖 LLM。
     """
     pending = pending or {}
 
     # 数值确认环节: 上一次询问后用户答复
     if pending:
         if is_confirmation_reply(user_text):
-            return await _write_and_check(pending, llm, driver, patient_id, education_route, motivation_route)
+            return await _write_and_check(pending, driver, patient_id, education_route, motivation_route)
         if is_denial_reply(user_text):
             return MonitorResult(
                 reply="没关系，那我们重新说一遍数值好吗？",
@@ -138,15 +139,22 @@ async def monitor_route(
 
 async def _write_and_check(
     pending: dict,
-    llm,
     driver,
     patient_id: str,
     education_route,
     motivation_route,
 ) -> MonitorResult:
-    """确认后: memory 写入 + 异常检测 → emergency 或简短确认。"""
+    """确认后: memory 写入 + 异常检测 → emergency 或简短确认。
+
+    结构化实体 (血压/心率/体重) 确定性构造记录走管道, 不依赖 LLM 抽取
+    (真实验收发现: 无 LLM 时 extract 返回空, 写入静默丢失)。
+    """
+    record = _entities_to_record(pending)
+    validated = validate(record)
+    nodes, crisis_items = items_to_nodes(validated)
+    await write(nodes, patient_id, driver)
+
     text = _entities_to_text(pending)
-    _, crisis_items = await memory_pipeline(text, patient_id, llm, driver)
     crisis = detect_crisis(text, pending)
 
     if crisis[0] or crisis_items:
@@ -154,6 +162,30 @@ async def _write_and_check(
         reply = await _run_emergency_branch(branch)
         return MonitorResult(reply=reply, emergency=True, crisis_kind=crisis[1], written=True)
     return MonitorResult(reply="好的，已经帮您记下了。", written=True)
+
+
+def _entities_to_record(entities: dict) -> PatientRecord:
+    """结构化实体 → PatientRecord (确定性, 无 LLM)。"""
+    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    records = []
+    if "systolic" in entities or "diastolic" in entities:
+        records.append(
+            RecordItem(
+                type="vitalsign", name="血压",
+                value=float(entities.get("systolic") or 0),
+                unit="mmHg", diastolic=entities.get("diastolic"),
+                timestamp=ts,
+            )
+        )
+    if "pulse" in entities:
+        records.append(
+            RecordItem(type="vitalsign", name="心率", value=float(entities["pulse"]), unit="次/分", timestamp=ts)
+        )
+    if "weight" in entities:
+        records.append(
+            RecordItem(type="vitalsign", name="体重", value=float(entities["weight"]), unit="kg", timestamp=ts)
+        )
+    return PatientRecord(records=records)
 
 
 def _entities_to_text(entities: dict) -> str:

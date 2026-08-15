@@ -93,7 +93,7 @@ async def handle_user_input(user_text: str, ctx: SystemContext) -> str:
     # 数值确认环节优先: 确认/否认答复不经过 triage 分类
     if ctx.pending:
         result = await monitor_route(
-            user_text, {}, ctx.llm, ctx.driver,
+            user_text, {}, ctx.driver,
             patient_id=ctx.patient_id, pending=ctx.pending,
             education_route=edu_for_emergency,
             motivation_route=mot_for_emergency,
@@ -115,7 +115,7 @@ async def handle_user_input(user_text: str, ctx: SystemContext) -> str:
 
     if target == "data_record":
         result = await monitor_route(
-            user_text, route.entities, ctx.llm, ctx.driver,
+            user_text, route.entities, ctx.driver,
             patient_id=ctx.patient_id, pending=None,
             education_route=edu_for_emergency,
             motivation_route=mot_for_emergency,

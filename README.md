@@ -98,4 +98,4 @@ uvicorn app.main:app
 
 - 蓝牙设备接入为预留接口（`app/device/` 抽象），MRP 阶段默认关闭。
 - Prompt 切换细则（emotional_support vs lifestyle_coaching 细粒度边界）留待后续迭代。
-- 本机无 Docker/Neo4j 时，图谱相关验收由测试替身覆盖（`tests/conftest.py`）；真实图谱验收需按「快速启动」第 1 步启动 Neo4j 后执行 `python scripts/import_kg.py`。
+- 真实图谱验收（Neo4j 5.26 社区版）已通过：导入幂等、Patient KG 四类时序写入、CrisisEvent、无 Medication 标签、`/health` 连接、T8 五场景端到端。
