@@ -36,22 +36,33 @@ class LLMClient:
 
     async def chat_json(self, system: str, user: str) -> dict | None:
         """单次对话, 要求模型返回 JSON 对象。解析失败或请求异常 → None。"""
+        content = await self.chat_text(system, user, temperature=0.2, response_format={"type": "json_object"})
+        if content is None:
+            return None
+        try:
+            return json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("LLM 返回非 JSON, 按失败处理")
+            return None
+
+    async def chat_text(self, system: str, user: str, temperature: float = 0.7, response_format: dict | None = None) -> str | None:
+        """单次对话, 返回文本。请求异常 → None。"""
         payload = {
             "model": self._model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": 0.2,
-            "response_format": {"type": "json_object"},
+            "temperature": temperature,
         }
+        if response_format:
+            payload["response_format"] = response_format
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(f"{self._base_url}/chat/completions", json=payload, headers=headers)
                 resp.raise_for_status()
-                content = resp.json()["choices"][0]["message"]["content"]
-            return json.loads(content)
-        except Exception as exc:  # 网络/超时/解析失败均回退关键词路径
-            logger.warning("LLM 调用失败, 回退关键词分类: %s", exc)
+                return resp.json()["choices"][0]["message"]["content"]
+        except Exception as exc:
+            logger.warning("LLM 调用失败: %s", exc)
             return None
